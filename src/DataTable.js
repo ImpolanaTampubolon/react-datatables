@@ -10,16 +10,42 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import DataTablePage from './DataTablePage';
 import api from "../api";
+import { NotificationManager } from './react-notifications';
 
-const DataTable = ({serverSide, heading, sortNumber, column}) =>{
-    const [loading, setLoading] = useState(false);
-    
+//function that return boolean
+const DataTable = ({serverSide, heading, sortNumber, column, reload, setReload}) =>{
+
+    const loadingStyle = {
+        position: "absolute",
+        left: 0,
+        right: 0,
+        textAlign: "center",
+        height: "80%",
+        width: "100%",
+        opacity: "0.5",
+        top: "15%",
+        background : "#fff",
+        display: "flex",
+        alignItems: "center",
+        bottom: "0",
+        zIndex: 2
+    }
+
+    const childStyle = {
+      zIndex: 3,
+      opacity: 1,
+      color: "black",
+      margin: "auto",
+      marginTop: "10px",
+      fontSize: "20px"
+    }
+
+    const [loading, setLoading] = useState(false);    
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPage, setTotalPage] = useState(0);
     const [startRecord, setStartRecord] = useState(0);
     const [endRecord, setEndRecord] = useState(0);
     const [totalRecord, setTotalRecord] = useState();
-
  
     const [data, setData] = useState([]);
     const [currentSort, setCurrentSort] = useState("");
@@ -33,10 +59,25 @@ const DataTable = ({serverSide, heading, sortNumber, column}) =>{
 
     const controller = new AbortController();
     let textTimer = null;
-    
+  
+
+    useEffect(() => {
+      if(reload){
+        getData();
+      }
+    },[reload])
+  
     useEffect(()=>{
         getData();
+    
     },[currentSort]);
+
+
+    useEffect(()=>{
+      setTimeout(function(){
+        getData();
+      }, 200);
+    },[currentPage])
 
     useEffect(()=>{
       setCurrentSort('');
@@ -53,13 +94,11 @@ const DataTable = ({serverSide, heading, sortNumber, column}) =>{
 
     function handleSearchPage(page){
       setCurrentPage(page);
-      setTimeout(function(){
-        getData();
-      }, 200);
     }
 
   
     async function getData(){
+
       if(serverSide === null) {
         console.log("server not found");
         return
@@ -112,10 +151,12 @@ const DataTable = ({serverSide, heading, sortNumber, column}) =>{
 
       try{
           const postData = {keyword : JSON.stringify(keyword), field : JSON.stringify(field), page : parseInt(currentPage), sort_field : currentSortBy, sort_order : currentSort}
-          const response = await api.post(serverSide, postData);
-          
+          const response = await api.post(serverSide, postData);          
           const rData = response.data;
-    
+
+          if(typeof rData.error !== "undefined"){
+              NotificationManager.error(rData.error, "Error", 3000, null, null, '');
+          }
 
           setStartRecord(rData.start_record);
           setTotalPage(rData.total_page);
@@ -124,6 +165,10 @@ const DataTable = ({serverSide, heading, sortNumber, column}) =>{
 
           setData(Object.assign([], rData.data));
           setLoading(false)
+
+          if(typeof setReload != "undefined") {
+            setReload(false);
+          }
 
       }catch (err) {
         setLoading(false)
@@ -134,7 +179,7 @@ const DataTable = ({serverSide, heading, sortNumber, column}) =>{
     const renderSearch = ()=>{
       const searchRow = [];
       if(sortNumber) {
-        searchRow.push(<th></th>)
+        searchRow.push(<th key={"emptyrendersearch"}></th>)
       }
 
       column.map((item, index) => {
@@ -146,7 +191,7 @@ const DataTable = ({serverSide, heading, sortNumber, column}) =>{
 
         switch (searchDt.type) {
           case 'text':
-            searchRow.push( <th className='text-center'> <input onChange={handleSearchText} id={"id-"+item.field} onKeyUp={handleSearchText} className="form-control"/> </th>   );
+            searchRow.push( <th key={`${index}-textsearch`} className='text-center'> <input onChange={handleSearchText} id={"id-"+item.field} onKeyUp={handleSearchText} className="form-control"/> </th>   );
             break;
           case 'option':
             if (typeof(searchDt.data) === 'undefined') {
@@ -154,12 +199,12 @@ const DataTable = ({serverSide, heading, sortNumber, column}) =>{
             }
             else{
               searchRow.push( 
-                <th>
+                <th key={"optionsearch"}>
                     <select className='form-control' onChange={getData} id={"id-"+item.field}>
                     {
                       searchDt.data.map((item2, index2) => {
                         return (
-                          <option value={item2.value}>{item2.name}</option>
+                          <option key={`${index2}-option`} value={item2.value}>{item2.name}</option>
                         );
                       })
                     }
@@ -170,7 +215,7 @@ const DataTable = ({serverSide, heading, sortNumber, column}) =>{
             break;
           case 'date':
             searchRow.push(
-              <th align='center'>
+              <th align='center' key={`${index}-datepicker`}>
                 <DatePicker
                   selected={startDate}
                   onChange={(dt)=>{setStartDate(dt);getData()}}
@@ -180,7 +225,7 @@ const DataTable = ({serverSide, heading, sortNumber, column}) =>{
             break;
             case 'date_range':
               searchRow.push(
-                <th>
+                <th key={`${index}-daterange`}>
                     <div className='mb-1'>
                       <DatePicker
                         selected={startDateRange}
@@ -201,7 +246,7 @@ const DataTable = ({serverSide, heading, sortNumber, column}) =>{
               )
               break;
           default:
-            searchRow.push(<th></th>);
+            searchRow.push(<th key={`emptyposearch`}></th>);
             break;
         }
 
@@ -214,23 +259,40 @@ const DataTable = ({serverSide, heading, sortNumber, column}) =>{
       const row = [];
 
       if(sortNumber){
-        row.push(<td key={`${index}-td`}>{index+1}</td>);
+        let num = currentPage * (index  + 1);
+        row.push(<td key={`${index}-td-sortnumber`}>{ num }</td>);
       }
 
       column.map((cl,ind)=>{
         const fieldName = cl.field;
-        if(fieldName === "" && cl.render != null){
-            row.push(<td key={`${ind}-${cl}`}>{cl.render(item)}</td> );
+
+        let align = '';
+        
+        if(typeof(cl.align) != 'undefined' && cl.align != ""){
+          align = cl.align;
         }
         else{
-            row.push(<td>{item[fieldName]}</td>)
+          align='left';
+        }
+
+        if(fieldName === "" && cl.render != null){
+            row.push(<td align={align} key={`${ind}-fieldname`}>{cl.render(item)}</td> );
+        }
+        else{
+            row.push(<td key={`${ind}-emptyfieldname`}>{item[fieldName]}</td>)
         }
 
       });
       return (row);
     }
 
-
+    const showLoading = () => {
+      return (
+        <div className='loadingTable' style={loadingStyle}>
+            <div style={childStyle}>Loading</div>
+        </div>
+      );
+    }
 
     const changeSorting = (e) => {
       const cTarget = e.currentTarget;
@@ -267,37 +329,36 @@ const DataTable = ({serverSide, heading, sortNumber, column}) =>{
     }
 
     return (
-        <React.Fragment>
-            {loading ? <div className='loadingTable'>Loading</div> : ""}
+        <div style={{position:"relative"}}>
+            {loading ?  showLoading() : ""}
                   <Table hover className="sortable dataTable">                
                     <thead>
-                      <tr>
-                        {sortNumber ? <th>#</th> : ""}
+                      <tr key={"thead"}>
+                        {sortNumber ? <th key={"empty-data"}>#</th> : ""}
 
                         {
                           column.length > 0 ?
                           column.map((item, index)=>{
                             return (
-                                <th key={`th-${index}`} field-name={item.field} onClick={ item.sort ? changeSorting : ()=>{} } className={item.sort ? "sorting" : ""} >{item.name} {item.sort ? <img src={sort_both} /> : ""}</th>
+                                <th key={`${index}-thead`}  field-name={item.field} onClick={ item.sort ? changeSorting : ()=>{} } className={item.sort ? "sorting" : ""} >{item.name} {item.sort ? <img src={sort_both} /> : ""}</th>
                             )
                           })
                           : ""
                         }
                       </tr>
-                      <tr>
+                      <tr key={"thead-search"}>
                       {renderSearch()}
                       </tr>
                     </thead>                   
                     <tbody>
                         {
                           data.length > 0 ?
-                            data.map((item, index)=>{
-                           
+                            data.map((item, index)=>{                           
                               return(
-                                <tr key={`${index}_tr`}>{renderRow(item,index)}</tr>
+                                <tr key={`${index}-tr`}>{renderRow(item,index)}</tr>
                               )
                             })
-                          : <tr><td colSpan={column.length + 1} align="center">Tidak ada data</td></tr>
+                          : <tr key={"tr-no-data"}><td key={`td-no-data`} colSpan={column.length + 1} align="center">Tidak ada data</td></tr>
                         }
                     </tbody>
                   </Table> 
@@ -315,7 +376,7 @@ const DataTable = ({serverSide, heading, sortNumber, column}) =>{
                     :
                     <div></div>
                   }
-        </React.Fragment>
+        </div>
             
     )
 }
@@ -325,12 +386,15 @@ DataTable.defaultProps = {
   sortNumber : true,
   serverSide : null,
   column : [],
+  reload : false
 }
 
 // const defaultColumn = {
 //   name : "",
 //   field : "",
 //   sort : false,
+//   width : ,
+//   align : "center",
 //   search : {  // if null hide search bar
 //     type : "option",  //type of search [text, number, custom =()=> render(data), option =()=>data[name, value], date, between_date]
 //     data : [],
